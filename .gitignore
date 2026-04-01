@@ -1,0 +1,8 @@
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+output
+workspace/
+*.pyc
+**/__pycache__/
+.claude/skills/excalidraw-diagram/references/.venv/

@@ -1,0 +1,66 @@
+{
+  "title": "SaaS Product Channel Map",
+  "subtitle": "Roles → Access Channels → Experience Layer → Feature Modules",
+  "sections": {
+    "rolesTitle": "Roles",
+    "accessTitle": "Access Channels",
+    "accessNote": "Dots show role access.",
+    "uiTitle": "Experience Layer",
+    "uiNote": "Channels route to these UIs.",
+    "mobileTitle": "Mobile Features",
+    "desktopTitle": "Desktop Features"
+  },
+  "roles": [
+    { "id": "admin", "label": "Admin" },
+    { "id": "manager", "label": "Project Manager" },
+    { "id": "member", "label": "Team Member" },
+    { "id": "guest", "label": "Guest" }
+  ],
+  "accessColumns": [
+    {
+      "key": "web",
+      "label": "Web\nBrowser",
+      "tone": "primary",
+      "uiId": "ui_dashboard",
+      "roles": ["admin", "manager", "member"]
+    },
+    {
+      "key": "mobile",
+      "label": "Mobile\nApp",
+      "tone": "warm",
+      "uiId": "ui_mobile",
+      "roles": ["manager", "member"]
+    },
+    {
+      "key": "api",
+      "label": "REST\nAPI",
+      "tone": "success",
+      "uiId": "ui_integration",
+      "roles": ["admin"]
+    },
+    {
+      "key": "share",
+      "label": "Public\nLink",
+      "tone": "neutral",
+      "uiId": "ui_dashboard",
+      "roles": ["guest"]
+    }
+  ],
+  "uiNodes": [
+    { "id": "ui_dashboard", "label": "Dashboard", "tone": "primary" },
+    { "id": "ui_mobile", "label": "Mobile Interface\n(Responsive PWA)", "tone": "warm" },
+    { "id": "ui_integration", "label": "Integration Panel", "tone": "success" }
+  ],
+  "mobileNodes": [
+    { "id": "m_task", "label": "Task List\nCreate / Complete" },
+    { "id": "m_notify", "label": "Push Notifications\nReal-time Alerts" },
+    { "id": "m_chat", "label": "Team Messaging\nText / Voice" },
+    { "id": "m_file", "label": "File Preview\nOffline Access" }
+  ],
+  "desktopNodes": [
+    { "id": "d_project", "label": "Project Management\nGantt / Kanban" },
+    { "id": "d_report", "label": "Reports & Analytics\nExport CSV / PDF" },
+    { "id": "d_settings", "label": "System Settings\nPermissions" },
+    { "id": "d_audit", "label": "Audit Log\nActivity Tracking" }
+  ]
+}
