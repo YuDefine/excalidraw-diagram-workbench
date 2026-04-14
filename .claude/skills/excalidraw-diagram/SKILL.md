@@ -241,6 +241,9 @@ For each concept, find the visual pattern that mirrors its behavior:
 | Transforms input to output      | **Assembly line** (before → process → after)       |
 | Compares two things             | **Side-by-side** (parallel with contrast)          |
 | Separates into phases           | **Gap/Break** (visual separation between sections) |
+| Has class/object structure      | **Class Diagram** (sectioned rectangles + typed arrows) |
+| Crosses organizational roles    | **Swimlane** (parallel lanes + cross-lane handoffs) |
+| Shows data movement (not steps) | **DFD** (processes + data stores + labeled flows)  |
 
 ### Step 3: Ensure Variety
 
@@ -415,6 +418,87 @@ Choose shape based on what it represents—or use no shape at all:
 | Hierarchy node                | lines + text (no boxes)       | Structure through lines      |
 
 **Rule**: Default to no container. Add shapes only when they carry meaning. Aim for <30% of text elements to be inside containers.
+
+---
+
+## Spacing Rules (CRITICAL)
+
+Consistent spacing prevents visual clutter and ensures labels remain readable. These are **hard constraints** — violating them produces diagrams that look broken.
+
+### Minimum Spacing
+
+| Context | Minimum Distance | Notes |
+|---------|-----------------|-------|
+| **Between components (vertical)** | 40 px | Allows room for horizontal arrows to pass without touching |
+| **Between components (horizontal)** | 60 px | Accounts for arrow labels and routing |
+| **Component to boundary edge** | 30 px | Prevents crowding at container edges |
+| **Boundary to boundary** | 20 px | When nesting boundaries (Region > VPC > SG) |
+| **Arrow label clearance** | 8 px | Gap between arrow path and label text |
+
+### Inline Connector Labels
+
+When placing labels on arrows that run **between** two vertically-stacked components:
+
+```
+┌─────────────┐
+│  Component  │
+└─────────────┘
+       │
+    "label"     ← Label MUST fit in the gap
+       ↓
+┌─────────────┐
+│  Component  │
+└─────────────┘
+```
+
+**Rules:**
+- The vertical gap between components MUST be ≥ 40 px
+- Label text height (~20px for fontSize 14) + padding (8px×2) = ~36px minimum
+- If label doesn't fit, **increase the gap** — do NOT overlap
+
+### Legend Placement
+
+Legend blocks MUST be placed **outside** all content boundaries:
+
+```
+┌────────────────────────────────────────────┐
+│  Region Boundary                           │
+│  ┌──────────────────────────────────────┐  │
+│  │  VPC                                 │  │
+│  │   ┌─────┐        ┌─────┐            │  │
+│  │   │ A   │───────▶│ B   │            │  │
+│  │   └─────┘        └─────┘            │  │
+│  └──────────────────────────────────────┘  │
+└────────────────────────────────────────────┘
+                                              ┌──────────┐
+                                              │ Legend   │  ← Outside all boundaries
+                                              │ ■ Type A │
+                                              │ ■ Type B │
+                                              └──────────┘
+```
+
+**Positioning algorithm:**
+1. Find `max_x` = rightmost element's right edge
+2. Find `max_y` = bottommost boundary's bottom edge
+3. Legend position: `x = max_x + 60`, `y = max_y - legend_height`
+4. If legend would exceed canvas, expand canvas by setting `appState.scrolledOutside: true`
+
+### Automatic Canvas Expansion
+
+When content exceeds the initial viewport:
+- Set `appState.width` and `appState.height` to encompass all elements + 100px padding
+- Alternatively, set `appState.scrolledOutside: true` and let Excalidraw auto-expand
+
+### Architecture Diagram Spacing
+
+For architecture diagrams with boundaries:
+
+| Layer | Top Margin | Side Margin |
+|-------|-----------|-------------|
+| Region boundary | 50 px from canvas edge | 50 px |
+| VPC/Cluster boundary | 40 px inside region | 30 px |
+| Security Group | 30 px inside VPC | 20 px |
+| Components | 20 px inside Security Group | 20 px |
 
 ---
 
@@ -672,16 +756,15 @@ For L-shape and U-shape arrows, always use `elbowed: true` with explicit waypoin
 
 ### Label Positioning for Orthogonal Arrows
 
-**Problem**: Bound labels (`containerId` → arrow) auto-position at the arrow's geometric midpoint. For two L-shaped arrows with similar total path lengths, both midpoints land at the same y-position, causing label overlap.
+**Always use bound labels** (`containerId` → arrow) for all arrows, including elbowed/orthogonal ones. Bound labels auto-position at the arrow's geometric midpoint and follow the arrow when elements are dragged — this is more stable than free-floating text.
 
-**Solution**: Use **free-floating labels** (no `containerId`) for L-shape and U-shape arrows. Position each label manually along a distinct segment of its arrow path:
+**Overlap prevention for bidirectional pairs**: When two L-shaped arrows between the same nodes have similar total path lengths, their bound labels may land at similar positions. Fix this by:
 
-| Arrow direction | Place label on... | Position relative to arrow |
-|----------------|-------------------|---------------------------|
-| Return (A→B) | Upper portion of vertical segment | Left of the line |
-| Forward (B→A) | Lower portion of vertical segment | Right of the line |
+1. **Routing arrows through different channels** (different `fixedPoint` y-values, e.g., 0.3 and 0.7) — this naturally separates their midpoints
+2. **Using `fixedSegments`** to control exact waypoint positions, which shifts the geometric midpoint
+3. **Adjusting arrow path length asymmetry** — make one arrow's L-shape longer on its horizontal segment so the midpoint shifts away from the other
 
-This ensures labels are visually associated with their arrow but never overlap each other.
+**Do NOT use free-floating labels for arrows.** Free-floating labels detach when elements are dragged, creating maintenance burden. The fix version of a state machine diagram confirmed that bound labels on elbowed arrows work correctly and produce cleaner results.
 
 ### Color-Coding by Actor/Role
 
@@ -704,6 +787,203 @@ Match label `strokeColor` to the arrow color for consistency. Include a legend b
 5. **Labels near their arrow**: Each label is clearly associated with one arrow, not ambiguous
 6. **Color-coded by role**: Arrow colors encode the actor/trigger, with a legend
 7. **All arrows bound**: Every arrow has `startBinding` and `endBinding` to state shapes
+
+---
+
+## Class Diagram
+
+### When to Use
+
+When the user asks for a class diagram, object model, OOP structure, or inheritance hierarchy.
+
+### Structure
+
+A class diagram has three structural layers per class, rendered as a single rectangle group:
+
+1. **Class name header** — Top section with the class name (fontSize M/20, bold via stroke color emphasis). Abstract classes use *italic-style* naming convention (prefix with `«abstract»` or `«interface»`).
+2. **Attributes section** — Middle section listing fields with visibility markers.
+3. **Methods section** — Bottom section listing operations with visibility markers.
+
+Use horizontal `line` elements as internal dividers between the three sections (not separate rectangles). This keeps each class as one visual unit.
+
+### Visibility Notation
+
+Render visibility as a single-character prefix in monospace (`fontFamily: 3`):
+
+| Prefix | Meaning | Color Hint |
+|--------|---------|------------|
+| `+` | Public | Default text color |
+| `-` | Private | Muted (use S-level text color from palette) |
+| `#` | Protected | Muted (use S-level text color from palette) |
+| `~` | Package | Muted (use S-level text color from palette) |
+
+Format each line as: `+ fieldName: Type` or `+ methodName(param: Type): ReturnType`
+
+Use fontSize S/16 for attribute and method lines; left-align text within the class box.
+
+### Relationship Types
+
+Each relationship type uses a distinct combination of `strokeStyle` and arrowheads:
+
+| Relationship | strokeStyle | startArrowhead | endArrowhead | Visual |
+|-------------|-------------|----------------|--------------|--------|
+| **Inheritance** (extends) | `"solid"` | `null` | `"triangle"` | ──▷ |
+| **Implementation** (implements) | `"dashed"` | `null` | `"triangle"` | - -▷ |
+| **Association** (uses) | `"solid"` | `null` | `"arrow"` | ──→ |
+| **Dependency** (depends on) | `"dashed"` | `null` | `"arrow"` | - -→ |
+| **Aggregation** (has-a, shared) | `"solid"` | `"diamond_outline"` | `"arrow"` | ◇──→ |
+| **Composition** (has-a, owned) | `"solid"` | `"diamond"` | `"arrow"` | ◆──→ |
+
+**Multiplicity labels**: When relevant, add bound text labels near each end of association/aggregation/composition arrows. Use fontSize S/16. Common values: `1`, `0..1`, `1..*`, `*`, `0..*`.
+
+### Layout Rules
+
+1. **Inheritance flows upward**: Place parent classes above children. Inheritance arrows point up (child → parent).
+2. **Composition/aggregation flows outward**: Place the "whole" near center, "parts" around it.
+3. **Consistent class box width**: Within a diagram, use a uniform width for all class boxes (typically 200–260px). Height varies by content.
+4. **Group by package**: If classes belong to different packages/modules, use section boundaries (large semi-transparent rectangles) to visually group them.
+
+### Class Diagram Checklist
+
+1. Every class has name + divider + attributes + divider + methods (even if a section is empty, show the divider)
+2. Visibility prefixes on every attribute and method
+3. Relationship arrows use correct arrowhead combos from the table above — no mixing
+4. All arrows have `startBinding` and `endBinding` to class boxes
+5. Multiplicity labels bound to arrows where cardinality matters
+6. Abstract classes / interfaces visually distinguished (stereotype label `«interface»` or `«abstract»`)
+
+---
+
+## Swimlane Diagram (Cross-Functional Business Flow)
+
+### When to Use
+
+When the user asks for a business process diagram, cross-functional workflow, or any diagram where **who does what** matters as much as **what happens**.
+
+### Structure
+
+A swimlane diagram has two structural axes:
+
+1. **Lanes (columns or rows)** — One per actor/role/department. Each lane is a tall rectangle with a header label.
+2. **Process flow** — Steps (rectangles) and decisions (diamonds) placed inside the lane of the responsible actor, connected by arrows that may cross lane boundaries.
+
+### Lane Construction
+
+Each lane consists of:
+
+- **Header rectangle** — Short, colored rectangle at the top with the actor name (fontSize M/20). Use distinct semantic colors per actor from the palette.
+- **Lane body** — Tall rectangle below the header, same width, with a very light background fill (`opacity: 100`, but use the lightest tint from the palette) or `"transparent"`. Use `strokeStyle: "dashed"` and `strokeWidth: 1` for lane body borders to keep them visually subordinate to the process flow.
+
+**Lane spacing**: Minimum 40px gap between adjacent lanes.
+
+### Process Elements Inside Lanes
+
+- **Steps**: Standard rectangles with contained text. Background color matches the lane's semantic color (lighter tint).
+- **Decisions**: Diamonds, placed in the lane of the actor who makes the decision.
+- **Start/End**: Ellipses, placed in the lane of the initiating/terminating actor.
+
+### Cross-Lane Handoffs
+
+When an arrow crosses from one lane to another, it represents a handoff of responsibility. These are the most important arrows in the diagram:
+
+- Use `strokeWidth: 2` for cross-lane arrows (vs `strokeWidth: 1` for within-lane arrows) to visually emphasize handoffs.
+- Add a bound verb label to every cross-lane arrow describing the handoff (e.g., "提交審核", "回傳結果").
+- Route cross-lane arrows horizontally — avoid diagonal paths that make it ambiguous which lane they belong to at each point.
+
+### Layout Rules
+
+1. **Vertical flow within lanes**: Steps flow top-to-bottom inside each lane.
+2. **Horizontal handoffs between lanes**: Cross-lane arrows move left-to-right or right-to-left.
+3. **Align concurrent steps**: Steps that happen in parallel across different lanes should share the same y-position.
+4. **Lane order matters**: Place lanes in the order that matches the primary flow direction (the actor who starts on the left, the actor who finishes on the right).
+
+### Swimlane Diagram Checklist
+
+1. Every actor has a distinct lane with a labeled header
+2. Every step is placed inside the correct actor's lane
+3. Cross-lane arrows are visually emphasized (`strokeWidth: 2`) with verb labels
+4. Within-lane arrows are subordinate (`strokeWidth: 1`)
+5. Lane body borders use `strokeStyle: "dashed"` to stay visually subordinate
+6. All arrows have `startBinding` and `endBinding`
+7. Concurrent steps are vertically aligned across lanes
+
+---
+
+## Data Flow Diagram (DFD)
+
+### When to Use
+
+When the user asks for a data flow diagram, data pipeline visualization, or wants to show how data moves and transforms through a system.
+
+### Critical Distinction from Flowcharts
+
+**A DFD shows data movement, NOT process order.** This is the most common mistake — treating a DFD like a flowchart. Key differences:
+
+| | Flowchart | DFD |
+|---|---|---|
+| **Shows** | Step sequence (do A, then B, then C) | Data paths (data X flows from A to B) |
+| **Arrows mean** | "Next step" / control flow | "Data moves here" / data flow |
+| **Decision points** | Yes (diamonds) | No — no control logic |
+| **Data stores** | Not a concept | Central concept (databases, files, caches) |
+| **Direction** | Usually top-to-bottom | Usually left-to-right or source-to-sink |
+
+**If the diagram has decision diamonds or sequential step numbers, it's a flowchart, not a DFD.**
+
+### Element Types
+
+A DFD uses exactly four element types:
+
+| DFD Concept | Shape | Visual | Description |
+|------------|-------|--------|-------------|
+| **External Entity** | `rectangle` | Filled rectangle | Sources or destinations of data outside the system boundary (users, external APIs, other systems) |
+| **Process** | `ellipse` or rounded `rectangle` | Circle/rounded box with a number | A transformation — data goes in one form, comes out another |
+| **Data Store** | Two horizontal `line` elements with text between them | ═══ Name ═══ | A place where data rests (database, file, cache, queue). Render as two parallel horizontal lines (top and bottom) with the store name between them. |
+| **Data Flow** | `arrow` | Labeled arrow | Data in motion — MUST have a bound label naming the data (e.g., "使用者資料", "訂單紀錄") |
+
+### Data Store Rendering
+
+Data stores have a distinctive visual: open-ended parallel lines (not a closed rectangle). Construct as:
+
+1. Top `line` element — horizontal, `strokeWidth: 2`
+2. Bottom `line` element — horizontal, `strokeWidth: 2`, same width, positioned below
+3. Free-floating text between the two lines (fontSize M/20) — the store name
+4. Optionally, a short vertical `line` on the left side connecting top and bottom lines, with a store number (e.g., "D1") to its left
+
+Group these elements with a shared `groupId` so they move together.
+
+### Arrow Labels Are Mandatory
+
+**Every data flow arrow MUST have a bound text label** naming the data that flows along it. An unlabeled arrow in a DFD is meaningless — it's the equivalent of a road with no name on a map.
+
+Use fontSize S/16, bound via `containerId` to the arrow.
+
+### Layout Rules
+
+1. **Left-to-right primary flow**: Place data sources on the left, sinks on the right.
+2. **External entities on the periphery**: External entities sit at the edges of the diagram.
+3. **Processes in the center**: Transformations occupy the middle area.
+4. **Data stores between processes**: Place stores near the processes that read/write them.
+5. **No crossing arrows**: Route data flows to minimize crossings. If unavoidable, use waypoints to route around obstacles.
+
+### Leveling (Complexity Management)
+
+DFDs support hierarchical decomposition:
+
+- **Context diagram (Level 0)**: One single process representing the entire system, with external entities and data flows. Use this when the user asks for a high-level overview.
+- **Level 1**: Decompose the single process into 3–7 sub-processes. Each sub-process shows its data flows and stores.
+- **Level 2+**: Further decompose individual Level 1 processes. Suggest breaking into separate diagrams if the user's request is too detailed for one.
+
+**Default to Level 1** unless the user specifies otherwise or the system is simple enough for Level 0.
+
+### DFD Checklist
+
+1. No decision diamonds or sequential control flow — this is NOT a flowchart
+2. Every arrow has a bound text label naming the data
+3. External entities are visually distinct from processes (filled rectangles vs ellipses/rounded rectangles)
+4. Data stores use the parallel-lines visual, not closed rectangles
+5. All arrows have `startBinding` and `endBinding`
+6. Data flows show what data moves, not when or in what order
+7. Processes are numbered (P1, P2, ...) for reference in leveling
 
 ---
 
@@ -799,6 +1079,16 @@ Position alone doesn't show relationships. If A relates to B, there must be an a
 
 Default settings: `fontSize: 20`, `fontFamily: 3`, `textAlign: "center"`, `verticalAlign: "middle"`
 
+### fontFamily Selection
+
+| Context | `fontFamily` | Why |
+|---------|-------------|-----|
+| Free-floating text (titles, labels, annotations) | `3` | Monospace, consistent width |
+| Text bound inside shapes (`containerId` → rectangle/ellipse/diamond) | `3` | Monospace, predictable centering |
+| Text bound to arrows (`containerId` → arrow) | `6` | Excalidraw's native font for arrow-bound labels. Using `3` causes drift — when users open the file in the Excalidraw editor, the editor auto-converts arrow-bound text to `fontFamily: 6` and recalculates dimensions, producing unnecessary JSON diffs. |
+
+**Rule**: Use `fontFamily: 6` with `lineHeight: 1.35` for all arrow-bound labels. Use `fontFamily: 3` with `lineHeight: 1.25` for everything else.
+
 ### autoResize (Mandatory for ALL text elements)
 
 **Every text element MUST include `"autoResize": true`**, regardless of whether it is free-floating, inside a container, or an arrow label.
@@ -840,7 +1130,7 @@ Only use these 4 sizes. Do NOT invent intermediate values (no 11px, 13px, 14px, 
 | **M** | `20` | Entity/node names, body text, contained text in shapes |
 | **S** | `16` | Labels, annotations, cardinality markers (`1:N`), metadata |
 
-These values match `generate_diagram.js` (`fontSizes = { sm: 16, md: 20, lg: 28, xl: 36 }`).
+These are the standard sizes for the skill.
 
 **Rule**: Every text element must use one of these 4 sizes. If text feels too small at S (12), the diagram needs a layout change — not a different font size.
 
@@ -891,6 +1181,63 @@ If drift appears, fix the generator/spec logic (not just the exported JSON) and 
 
 All generated `.excalidraw` files and their rendered `.png` files MUST be saved to the `output/` directory in the project root (e.g., `output/my-diagram-dark.excalidraw`). Do NOT save diagram files to the project root directory.
 
+### File Naming Convention
+
+Use semantic naming: `[topic].[type].excalidraw`
+
+| Component | Description | Examples |
+|-----------|-------------|---------|
+| `topic` | Subject matter in kebab-case | `auth-flow`, `data-pipeline`, `user-journey` |
+| `type` | Diagram type abbreviation | `er`, `seq`, `flow`, `state`, `class`, `swim`, `dfd`, `arch` |
+
+**Examples:**
+- `auth-flow.seq.excalidraw` / `auth-flow.seq-dark.excalidraw`
+- `order-system.er.excalidraw` / `order-system.er-dark.excalidraw`
+- `ci-cd-pipeline.flow.excalidraw`
+
+For dual-theme output, append `-dark` before the extension for the dark version. The light version uses no suffix.
+
+---
+
+## Animation Support (Optional)
+
+When the user requests animated or step-by-step reveal diagrams (e.g., for presentations, tutorials, or video walkthroughs), add `customData.animate` to each element. This is compatible with [excalidraw-animate](https://github.com/nicedoc/excalidraw-animate) for SVG/WebM export.
+
+### How It Works
+
+Each element gets a draw order and duration:
+
+```json
+{
+  "type": "rectangle",
+  "id": "step_1_rect",
+  "customData": {
+    "animate": {
+      "order": 1,
+      "duration": 500
+    }
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `order` | integer | Draw sequence (1 = first drawn). Elements with the same `order` appear simultaneously. |
+| `duration` | integer (ms) | How long the draw-in animation takes. 300–500ms for shapes, 200–300ms for text, 400–600ms for arrows. |
+
+### Animation Ordering Guidelines
+
+1. **Follow the visual narrative**: Order should match the story the diagram tells — typically left→right, top→bottom, or following the primary flow direction.
+2. **Group related elements**: A shape and its contained text should share the same `order` value so they appear together.
+3. **Arrows after endpoints**: An arrow's `order` must be higher than both its start and end shapes. The viewer needs to see the nodes before the connection.
+4. **Section-by-section reveal**: For multi-zoom diagrams, reveal Level 1 (summary) first, then Level 2 (sections), then Level 3 (details).
+5. **Evidence artifacts last**: Code snippets and data examples appear after the structural elements they illustrate.
+
+### When NOT to Animate
+
+- **Default is no animation.** Only add `customData.animate` when the user explicitly requests it.
+- Static diagrams (the majority of use cases) should NOT include `customData` at all — it adds unnecessary JSON bulk.
+
 ---
 
 ## JSON Structure
@@ -903,7 +1250,9 @@ All generated `.excalidraw` files and their rendered `.png` files MUST be saved 
   "elements": [...],
   "appState": {
     "viewBackgroundColor": "#ffffff",
-    "gridSize": 20
+    "gridSize": 20,
+    "gridStep": 5,
+    "gridModeEnabled": false
   },
   "files": {}
 }
@@ -1054,6 +1403,47 @@ These are the defects most likely to be missed during self-review. Check for the
 
 ---
 
+## Common Pitfalls (Self-Check Before Render)
+
+These are the most frequent mistakes in generated Excalidraw JSON. Scan for them **before** running the first render to save iteration cycles.
+
+| # | Pitfall | Symptom | Prevention |
+|---|---------|---------|------------|
+| 1 | **Text x is left-edge, not center** | Text appears left-aligned inside a centered container | Calculate `text.x = container.x + (container.width - textWidth) / 2` explicitly |
+| 2 | **Insufficient element spacing** | Elements overlap or crowd each other | Minimum 30px gap between shapes; 50px between logical sections |
+| 3 | **Insufficient canvas padding** | Elements clipped at diagram edges | Maintain ≥80px padding from the outermost elements to the logical canvas boundary |
+| 4 | **Title misaligned with content** | Title floats disconnected from the diagram body | Align title x with the leftmost content element's x (or center over the full content width) |
+| 5 | **Arrow label exceeds arrow length** | Label text overflows past the arrow endpoints | Shorten label text or lengthen the arrow. Labels should be ≤60% of arrow length |
+| 6 | **Low contrast text** | Text unreadable against background | Minimum `#64748b` on light backgrounds, `#a6adc8` on dark backgrounds |
+| 7 | **Font size below scale** | Using 14px, 12px, or other non-standard sizes | Only use 16/20/28/36. If text feels too small at 16, redesign the layout |
+| 8 | **Missing `autoResize: true`** | Text box renders with excess padding or clipped content | Every text element — free-floating, contained, or arrow label — must include `autoResize: true` |
+| 9 | **Unbound arrow endpoints** | Arrows detach when elements are dragged in the editor | Every arrow must have both `startBinding` and `endBinding`; target shapes must list the arrow in `boundElements` |
+| 10 | **`boundElements: null` instead of `[]`** | Excalidraw treats element as having unknown binding state | Always use `[]` (empty array), never `null` |
+| 11 | **`fontFamily: 3` on arrow-bound labels** | Editor converts to `fontFamily: 6` on save, causing JSON drift | Use `fontFamily: 6` + `lineHeight: 1.35` for arrow-bound text; `fontFamily: 3` + `lineHeight: 1.25` for all other text |
+| 12 | **Missing `gridStep` in appState** | Editor adds `gridStep: 5` on save, causing appState churn | Always include `"gridStep": 5, "gridModeEnabled": false` in appState |
+| 13 | **Free-floating labels on arrows** | Labels detach when elements are dragged in editor | Always bind labels to arrows via `containerId` — even for elbowed/orthogonal arrows |
+
+---
+
+## Post-Generation Report (MANDATORY)
+
+After completing a diagram (all render-validate cycles passed), present a brief structured report to the user:
+
+```
+### Diagram Generated
+
+- **Type**: [diagram type, e.g., ER Diagram / Sequence / Flowchart / State Machine]
+- **Files**: [list of generated files with paths]
+- **Theme**: [Light / Dark / Both]
+- **Animated**: [Yes (order 1–N, duration Xms–Yms) / No]
+- **Design rationale**: [1–2 sentences on why this visual pattern was chosen]
+- **Modification hints**: [suggest 2–3 things the user might want to adjust, e.g., "add more entities", "change color scheme", "switch to vertical layout"]
+```
+
+This gives the user immediate context without needing to open the file, and reduces back-and-forth clarification.
+
+---
+
 ## Quality Checklist
 
 ### Depth & Evidence (Check First for Technical Diagrams)
@@ -1086,7 +1476,7 @@ These are the defects most likely to be missed during self-review. Check for the
 ### Technical
 
 16. **Text clean**: `text` contains only readable words
-17. **Font**: `fontFamily: 3`
+17. **Font**: `fontFamily: 3` for shapes/free text, `fontFamily: 6` for arrow-bound labels
 18. **Roughness**: `roughness: 0` for clean/modern (unless hand-drawn style requested)
 19. **Opacity**: `opacity: 100` for all elements (no transparency)
 20. **Container ratio**: <30% of text elements should be inside containers
