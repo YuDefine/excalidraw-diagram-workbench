@@ -1,35 +1,34 @@
-# Excalidraw Diagram Workbench
+@RTK.md
 
-## 強制規則
+## Language
 
-### 建立圖表必須使用 /excalidraw-diagram skill
+- 一律使用繁體中文，不要使用簡體中文。
 
-當任務涉及建立、修改、或重新生成 `.excalidraw` 圖表時，**必須**透過 `/excalidraw-diagram` skill 執行。禁止在主對話中直接手寫 Excalidraw JSON。
+## Source Of Truth
 
-觸發條件（符合任一即適用）：
-- 使用者要求畫圖、建立圖表、視覺化任何概念
-- 需要產出 `.excalidraw` 檔案
-- 需要修改既有 `.excalidraw` 檔案的佈局、元素、或箭頭路由
+- `.claude/` 是本專案唯一真理。
+- 規則 source 在 `.claude/rules/`。
+- workflow / skills source 在 `.claude/skills/` 與 `.claude/commands/`。
+- hooks / agents / settings source 在 `.claude/` 內對應路徑。
+- `AGENTS.md`、`.agents/`、`.codex/` 都是投影；若需調整內容，先改 `.claude/`，再用 `sync-to-agents` 同步。
 
-**唯一例外**：對已渲染圖表的微調（如修正單一座標值、調整顏色），可直接用 Edit tool 修改 JSON，無需重新走 skill。
+## Project Focus
 
-### 渲染驗證
+- Excalidraw Diagram Workbench，專門用來產生、編修與輸出 Excalidraw 圖表；更多背景與操作方式見 `README.md`。
 
-圖表產出後必須渲染 PNG 並用 Read tool 檢視，確認無跑版再交付。
+## Project Rules
 
-批次渲染：
-```bash
-./render_excalidraw.sh ./temp/           # 批次渲染目錄
-./render_excalidraw.sh file.excalidraw   # 單一檔案
-```
+- 涉及 `.excalidraw` 的建立、修改或重排時，優先走 `.claude/skills/excalidraw-diagram/`。
+- 圖表交付前必須渲染 PNG 驗證畫面沒有跑版。
 
-### 主題預設
+## Rule Entry Points
 
-遵循 memory 中的設定：預設只產 dark 版，除非使用者另有指定。
+- 產圖 workflow：`.claude/rules/excalidraw-diagram.md`
+- 輸出與交付約定：`.claude/rules/output-conventions.md`
+- diagram skill：`.claude/skills/excalidraw-diagram/`
 
-## 專案結構
+## Codex Projection
 
-- `temp/` — 工作中的圖表與規格文件
-- `output/` — 正式交付的圖表
-- `.claude/skills/excalidraw-diagram/` — 圖表 skill 與渲染器
-- `render_excalidraw.sh` — 批次渲染入口腳本
+- 定期執行 `node ~/.claude/scripts/sync-to-agents.mjs`，讓 Codex surface 與 `.claude/` 保持一致。
+- 專案特化 promotion 規則放在 `.claude/sync-to-agents.config.json`。
+- 若 source 與投影不一致，以 `.claude/` 為準，之後再同步生成。
