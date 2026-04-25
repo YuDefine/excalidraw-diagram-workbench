@@ -2,7 +2,15 @@
 
 Usage:
     cd .claude/skills/excalidraw-diagram/references
+
+    # Single file
     uv run python render_excalidraw.py <path-to-file.excalidraw> [--output path.png] [--scale 2] [--width 1920] [--dark]
+
+    # Directory (renders every *.excalidraw inside it, replacing existing PNGs)
+    uv run python render_excalidraw.py <path-to-dir>
+
+    # No input → batch-render every *.excalidraw under the repo's `output/` directory
+    uv run python render_excalidraw.py
 
 First-time setup:
     cd .claude/skills/excalidraw-diagram/references
@@ -82,6 +90,23 @@ def compute_bounding_box(elements: list[dict]) -> tuple[float, float, float, flo
     return (min_x, min_y, max_x, max_y)
 
 
+def resolve_default_output_dir() -> Path:
+    """Locate the repo's `output/` directory.
+
+    Resolution order:
+    1. ``$PWD/output`` if the user invoked the script from the repo root.
+    2. ``<repo_root>/output`` where ``<repo_root>`` is computed from this file's
+       location: ``.claude/skills/excalidraw-diagram/references/render_excalidraw.py``
+       → 4 parents up.
+    """
+    cwd_candidate = Path.cwd() / "output"
+    if cwd_candidate.is_dir():
+        return cwd_candidate
+
+    repo_root = Path(__file__).resolve().parents[4]
+    return repo_root / "output"
+
+
 def render(
     excalidraw_path: Path,
     output_path: Path | None = None,
@@ -158,13 +183,14 @@ def render(
         # Load the template
         page.goto(template_url)
 
-        # Wait for the ES module to load (imports from esm.sh)
-        page.wait_for_function("window.__moduleReady === true", timeout=30000)
+        # Wait for the UMD bundles to expose window.ExcalidrawLib
+        page.wait_for_function("window.__moduleReady === true", timeout=60000)
 
         # Inject the diagram data and render
-        json_str = json.dumps(data)
-        opts_str = json.dumps({"darkMode": dark_mode})
-        result = page.evaluate(f"window.renderDiagram({json_str}, {opts_str})")
+        result = page.evaluate(
+            "([d, o]) => window.renderDiagram(d, o)",
+            [data, {"darkMode": dark_mode}],
+        )
 
         if not result or not result.get("success"):
             error_msg = result.get("error", "Unknown render error") if result else "renderDiagram returned null"
@@ -188,25 +214,89 @@ def render(
     return output_path
 
 
+def render_batch(
+    files: list[Path],
+    scale: int,
+    max_width: int,
+    dark_mode: bool | None,
+    label: str,
+) -> int:
+    """Render every file in *files*, replacing existing PNGs. Returns process exit code."""
+    if not files:
+        print(f"No .excalidraw files found in {label}.", file=sys.stderr)
+        return 0
+
+    files = sorted(files)
+    total = len(files)
+    ok = 0
+    fail = 0
+    print(f"Batch rendering {total} file(s) from {label}")
+    for idx, src in enumerate(files, start=1):
+        png_path = src.with_suffix(".png")
+        marker = "↻" if png_path.exists() else "+"
+        print(f"  [{idx}/{total}] {marker} {src.name} → {png_path.name}")
+        try:
+            render(src, png_path, scale, max_width, dark_mode)
+            ok += 1
+        except SystemExit:
+            # render() already printed the failure to stderr
+            fail += 1
+        except Exception as e:
+            print(f"    ERROR: {e}", file=sys.stderr)
+            fail += 1
+
+    print(f"\nDone: {ok} ok, {fail} failed (of {total}).")
+    return 0 if fail == 0 else 1
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Render Excalidraw JSON to PNG")
-    parser.add_argument("input", type=Path, help="Path to .excalidraw JSON file")
-    parser.add_argument("--output", "-o", type=Path, default=None, help="Output PNG path (default: same name with .png)")
+    parser.add_argument(
+        "input",
+        type=Path,
+        nargs="?",
+        default=None,
+        help=(
+            "Path to .excalidraw file or directory containing .excalidraw files. "
+            "If omitted, batch-renders every *.excalidraw under the repo's `output/` directory, "
+            "overwriting any existing PNG with the same name."
+        ),
+    )
+    parser.add_argument("--output", "-o", type=Path, default=None, help="Output PNG path (single-file mode only; default: same name with .png)")
     parser.add_argument("--scale", "-s", type=int, default=2, help="Device scale factor (default: 2)")
     parser.add_argument("--width", "-w", type=int, default=1920, help="Max viewport width (default: 1920)")
     parser.add_argument("--dark", action="store_true", default=None, help="Force dark mode rendering (default: auto-detect from file)")
     parser.add_argument("--light", action="store_true", default=None, help="Force light mode rendering")
     args = parser.parse_args()
 
-    if not args.input.exists():
-        print(f"ERROR: File not found: {args.input}", file=sys.stderr)
-        sys.exit(1)
-
     dark_mode = None
     if args.dark:
         dark_mode = True
     elif args.light:
         dark_mode = False
+
+    # No input → batch-render the default output/ directory
+    if args.input is None:
+        out_dir = resolve_default_output_dir()
+        if not out_dir.is_dir():
+            print(f"ERROR: Default output directory not found: {out_dir}", file=sys.stderr)
+            sys.exit(1)
+        files = list(out_dir.glob("*.excalidraw"))
+        sys.exit(render_batch(files, args.scale, args.width, dark_mode, str(out_dir)))
+
+    if not args.input.exists():
+        print(f"ERROR: Path not found: {args.input}", file=sys.stderr)
+        sys.exit(1)
+
+    # Directory → batch
+    if args.input.is_dir():
+        files = list(args.input.glob("*.excalidraw"))
+        sys.exit(render_batch(files, args.scale, args.width, dark_mode, str(args.input)))
+
+    # Single file
+    if args.input.suffix != ".excalidraw":
+        print(f"ERROR: Expected .excalidraw file, got: {args.input}", file=sys.stderr)
+        sys.exit(1)
 
     png_path = render(args.input, args.output, args.scale, args.width, dark_mode)
     print(str(png_path))

@@ -8,15 +8,25 @@
     #root { display: inline-block; }
     #root svg { display: block; }
   </style>
+  <!--
+    Use UMD bundles from unpkg instead of esm.sh ESM build.
+    esm.sh has been observed serving 404 for transitive deps
+    (e.g. @braintree/sanitize-url@6.0.2/es2022/dist/constants.mjs),
+    which causes the entire ESM module graph to never become ready
+    and the Playwright wait_for_function call to time out.
+    The UMD path bypasses esm.sh's runtime resolver entirely.
+  -->
+  <script crossorigin src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@excalidraw/excalidraw@0.17.6/dist/excalidraw.production.min.js"></script>
 </head>
 <body>
   <div id="root"></div>
 
-  <script type="module">
-    import { exportToSvg } from "https://esm.sh/@excalidraw/excalidraw?bundle";
-
-    window.renderDiagram = async function(jsonData, opts = {}) {
+  <script>
+    window.renderDiagram = async function(jsonData, opts) {
       try {
+        opts = opts || {};
         const data = typeof jsonData === "string" ? JSON.parse(jsonData) : jsonData;
         const elements = data.elements || [];
         const appState = data.appState || {};
@@ -29,12 +39,9 @@
         appState.exportWithDarkMode = false;
         document.body.style.background = bgColor;
 
-        const svg = await exportToSvg({
+        const svg = await window.ExcalidrawLib.exportToSvg({
           elements: elements,
-          appState: {
-            ...appState,
-            exportBackground: true,
-          },
+          appState: Object.assign({}, appState, { exportBackground: true }),
           files: files,
         });
 
@@ -47,12 +54,20 @@
         return { success: true, width: svg.getAttribute("width"), height: svg.getAttribute("height") };
       } catch (err) {
         window.__renderComplete = true;
-        window.__renderError = err.message;
-        return { success: false, error: err.message };
+        window.__renderError = String(err && err.message || err);
+        return { success: false, error: String(err && err.message || err) };
       }
     };
 
-    window.__moduleReady = true;
+    // Wait for UMD scripts to expose ExcalidrawLib on window.
+    // Polling beats `defer`/`DOMContentLoaded` because we don't control script ordering on slow networks.
+    (function waitReady() {
+      if (window.ExcalidrawLib && typeof window.ExcalidrawLib.exportToSvg === "function") {
+        window.__moduleReady = true;
+      } else {
+        setTimeout(waitReady, 100);
+      }
+    })();
   </script>
 </body>
 </html>
