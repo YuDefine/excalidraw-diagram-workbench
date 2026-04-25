@@ -8,7 +8,17 @@ model: sonnet
 
 ## Execution Model
 
-**After loading this skill, you MUST immediately spawn an Agent with `model: "sonnet"` to execute the entire diagram generation task.** Do not generate the diagram in the main conversation — delegate all work (planning, JSON generation, rendering, validation) to the Sonnet agent. Pass the full user request and the skill's base directory path to the agent prompt.
+This skill is iteration-heavy (render → read PNG → fix → re-render, often 2–4 cycles), so it benefits from running in a dedicated subagent that keeps the main conversation context clean.
+
+**Default**: spawn an Agent with `model: "sonnet"` to execute the entire task (planning, JSON generation, rendering, validation). Pass the full user request and the skill's base directory path to the agent prompt.
+
+**Fallback (no retry, no prompt)**: if spawning the Sonnet subagent fails — for any reason, including but not limited to:
+
+- Main session uses a non-standard context window (e.g. Opus 1M, Sonnet 1M) and the subagent inherits it without the account having enabled extra usage for that combination
+- Sonnet model is not available on the current account/tier
+- The harness rejects the spawn for any other reason
+
+— **immediately execute the entire workflow inline in the main conversation instead.** Do NOT ask the user to enable extra usage, switch models, or retry. Do NOT block on the spawn failure. Just proceed with the diagram generation directly. The skill's instructions below apply equally to subagent execution and inline execution.
 
 ---
 
