@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #ffffff; overflow: hidden; }
+    #stage { position: absolute; left: -99999px; top: -99999px; visibility: hidden; }
+  </style>
+</head>
+<body>
+  <div id="stage"></div>
+
+  <script type="module">
+    // Excalidraw font family numeric IDs map to specific font stacks.
+    // Source: @excalidraw/excalidraw constants. The stacks below mirror the CSS
+    // Excalidraw injects, so canvas measureText() with these strings produces
+    // pixel-equivalent widths to what gets exported in the SVG/PNG.
+    const FONT_STACKS = {
+      1: '"Virgil", "Segoe UI Emoji"',
+      2: '"Helvetica", "Segoe UI Emoji"',
+      3: '"Cascadia", "Segoe UI Emoji"',
+      5: '"Excalifont", "Segoe UI Emoji"',
+      6: '"Nunito"',
+      7: '"Lilita One"',
+      8: '"Comic Shanns"',
+    };
+
+    function fontStringFor(el) {
+      const fontSize = el.fontSize || 20;
+      const family = FONT_STACKS[el.fontFamily] || FONT_STACKS[2];
+      return `${fontSize}px ${family}`;
+    }
+
+    const loadErrors = [];
+
+    async function loadEsmRenderer() {
+      const candidates = [
+        {
+          name: "jsdelivr ESM @excalidraw/excalidraw@0.18.1",
+          url: "https://cdn.jsdelivr.net/npm/@excalidraw/excalidraw@0.18.1/+esm",
+        },
+      ];
+      for (const c of candidates) {
+        try {
+          const m = await import(c.url);
+          if (typeof m.exportToSvg === "function") {
+            return { exportToSvg: m.exportToSvg, source: c.name };
+          }
+          loadErrors.push(`${c.name}: exportToSvg is not a function`);
+        } catch (err) {
+          loadErrors.push(`${c.name}: ${String((err && err.message) || err)}`);
+        }
+      }
+      return null;
+    }
+
+    function loadScript(src) {
+      return new Promise((resolve, reject) => {
+        const s = document.createElement("script");
+        s.crossOrigin = "anonymous";
+        s.src = src;
+        s.onload = resolve;
+        s.onerror = () => reject(new Error(`failed to load ${src}`));
+        document.head.appendChild(s);
+      });
+    }
+
+    async function loadUmdRenderer() {
+      const source = "unpkg UMD @excalidraw/excalidraw@0.17.6";
+      try {
+        await loadScript("https://unpkg.com/react@18.2.0/umd/react.production.min.js");
+        await loadScript("https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js");
+        await loadScript("https://unpkg.com/@excalidraw/excalidraw@0.17.6/dist/excalidraw.production.min.js");
+        if (window.ExcalidrawLib && typeof window.ExcalidrawLib.exportToSvg === "function") {
+          return { exportToSvg: window.ExcalidrawLib.exportToSvg, source };
+        }
+        loadErrors.push(`${source}: window.ExcalidrawLib.exportToSvg is not available`);
+      } catch (err) {
+        loadErrors.push(`${source}: ${String((err && err.message) || err)}`);
+      }
+      return null;
+    }
+
+    async function loadRenderer() {
+      const esm = await loadEsmRenderer();
+      if (esm) return esm;
+      const umd = await loadUmdRenderer();
+      if (umd) return umd;
+      throw new Error(loadErrors.join("\n"));
+    }
+
+    /**
+     * Measure every text element in the diagram using canvas measureText
+     * with the same font stacks Excalidraw uses. We export the diagram to
+     * SVG first to ensure Excalidraw has a chance to load its bundled fonts
+     * (Virgil, Cascadia, Excalifont, Nunito, Lilita One, Comic Shanns) into
+     * document.fonts, otherwise canvas would silently fall back to a system
+     * font and produce wrong widths.
+     */
+    window.measureElements = async function (jsonData) {
+      try {
+        if (typeof window.__exportToSvg !== "function") {
+          throw new Error("Renderer is not ready");
+        }
+        const data = typeof jsonData === "string" ? JSON.parse(jsonData) : jsonData;
+        const elements = data.elements || [];
+        const appState = data.appState || {};
+        const files = data.files || {};
+
+        // Render once to trigger font loading. We don't need the SVG output —
+        // just the side effect of the font registration.
+        const svg = await window.__exportToSvg({
+          elements: elements,
+          appState: Object.assign({}, appState, { exportBackground: false }),
+          files: files,
+        });
+        const stage = document.getElementById("stage");
+        while (stage.firstChild) stage.removeChild(stage.firstChild);
+        stage.appendChild(svg);
+
+        if (document.fonts && typeof document.fonts.ready?.then === "function") {
+          await document.fonts.ready;
+        }
+
+        // Pre-load every font/size combo the diagram uses, in case the SVG
+        // export didn't trigger a load for some glyphs.
+        if (document.fonts && typeof document.fonts.load === "function") {
+          const seen = new Set();
+          const loads = [];
+          for (const el of elements) {
+            if (el.isDeleted || el.type !== "text") continue;
+            const f = fontStringFor(el);
+            if (seen.has(f)) continue;
+            seen.add(f);
+            const text = el.originalText || el.text || "";
+            try { loads.push(document.fonts.load(f, text)); } catch (_) {}
+          }
+          await Promise.all(loads).catch(() => {});
+        }
+
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+
+        const measurements = {};
+        for (const el of elements) {
+          if (el.isDeleted) continue;
+          if (el.type !== "text") continue;
+          const fontSize = el.fontSize || 20;
+          const lineHeight = el.lineHeight || 1.25;
+          ctx.font = fontStringFor(el);
+          const text = el.originalText || el.text || "";
+          const lines = text.split("\n");
+          let maxWidth = 0;
+          for (const line of lines) {
+            const m = ctx.measureText(line);
+            if (m.width > maxWidth) maxWidth = m.width;
+          }
+          measurements[el.id] = {
+            renderedWidth: maxWidth,
+            renderedHeight: lines.length * fontSize * lineHeight,
+            lineCount: lines.length,
+            font: ctx.font,
+          };
+        }
+
+        return { success: true, measurements, rendererSource: window.__rendererSource };
+      } catch (err) {
+        return { success: false, error: String((err && err.message) || err) };
+      }
+    };
+
+    loadRenderer()
+      .then((renderer) => {
+        window.__exportToSvg = renderer.exportToSvg;
+        window.__rendererSource = renderer.source;
+        window.__moduleReady = true;
+      })
+      .catch((err) => {
+        window.__moduleError = String((err && err.message) || err);
+        console.error(window.__moduleError);
+      });
+  </script>
+</body>
+</html>

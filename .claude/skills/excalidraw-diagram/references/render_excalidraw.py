@@ -179,12 +179,41 @@ def render(
             viewport={"width": vp_width, "height": vp_height},
             device_scale_factor=scale,
         )
+        load_events: list[str] = []
+        page.on("pageerror", lambda exc: load_events.append(f"pageerror: {exc}"))
+        page.on("requestfailed", lambda req: load_events.append(f"requestfailed: {req.url} {req.failure}"))
+        page.on(
+            "console",
+            lambda msg: load_events.append(f"console.{msg.type}: {msg.text}")
+            if msg.type in ("error", "warning")
+            else None,
+        )
 
         # Load the template
         page.goto(template_url)
 
-        # Wait for the UMD bundles to expose window.ExcalidrawLib
-        page.wait_for_function("window.__moduleReady === true", timeout=60000)
+        # Wait for the browser template to load an Excalidraw exportToSvg backend.
+        try:
+            page.wait_for_function(
+                "window.__moduleReady === true || Boolean(window.__moduleError)",
+                timeout=60000,
+            )
+        except Exception:
+            print("ERROR: Renderer libraries did not become ready within 60 seconds.", file=sys.stderr)
+            for event in load_events[-12:]:
+                print(f"  - {event}", file=sys.stderr)
+            browser.close()
+            sys.exit(1)
+
+        module_error = page.evaluate("window.__moduleError || null")
+        if module_error:
+            print("ERROR: Renderer libraries failed to load:", file=sys.stderr)
+            for line in str(module_error).splitlines():
+                print(f"  - {line}", file=sys.stderr)
+            for event in load_events[-12:]:
+                print(f"  - {event}", file=sys.stderr)
+            browser.close()
+            sys.exit(1)
 
         # Inject the diagram data and render
         result = page.evaluate(

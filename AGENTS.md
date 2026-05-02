@@ -9,7 +9,7 @@
 
 - `.claude/` 是本專案唯一真理。
 - 規則 source 在 `.claude/rules/`。
-- workflow / skills source 在 `.agents/skills/` 與 `.agents/skills/`。
+- workflow / skills source 在 `.agents/skills/` 與 `.agents/commands/`。
 - hooks / agents / settings source 在 `.claude/` 內對應路徑。
 - `AGENTS.md`、`.agents/`、`.codex/` 都是投影；若需調整內容，先改 `.claude/`，再用 `sync-to-agents` 同步。
 
@@ -30,7 +30,7 @@
 
 ## Codex Projection
 
-- 定期執行 `node ~/.codex/scripts/sync-to-agents.mjs`，讓 Codex surface 與 `.claude/` 保持一致。
+- 定期執行 `node ~/.claude/scripts/sync-to-agents.mjs`，讓 Codex surface 與 `.claude/` 保持一致。
 - 專案特化 promotion 規則放在 `.claude/sync-to-agents.config.json`。
 - 若 source 與投影不一致，以 `.claude/` 為準，之後再同步生成。
 
